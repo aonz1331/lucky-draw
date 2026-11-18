@@ -1,0 +1,12 @@
+[build]
+  publish = "public"
+  command = "echo 'no build step'"
+
+[functions]
+  directory = "netlify/functions"
+
+# ลิงก์สั้นใน QR: https://<site>.netlify.app/r  → หน้าลงทะเบียน
+[[redirects]]
+  from = "/r"
+  to = "/index.html"
+  status = 200
