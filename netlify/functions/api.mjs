@@ -72,10 +72,21 @@ const actions = {
 
   getState: (st) => state(st),
 
-  getStatus: async (st) => {
+  // หน้ามือถือเรียกทุกไม่กี่วินาที: อ่านแค่ event + winners (ไม่ list รายชื่อ)
+  getStatus: async (st, token) => {
     const ev = await getEvent(st);
-    return { now: Date.now(), event: ev ? { id: ev.id, title: ev.title, endAt: ev.endAt } : null,
-             open: !!(ev && Date.now() < ev.endAt) };
+    const now = Date.now();
+    const open = !!(ev && now < ev.endAt);
+    let winners = [], pending = false, me = null;
+    if (ev && !open) {
+      const all = (await st.get(`win/${ev.id}`, { type: "json" })) || [];
+      const revealed = all.filter((w) => !w.revealAt || w.revealAt <= now); // ไม่ให้มือถือรู้ผลก่อนจอใหญ่
+      pending = revealed.length < all.length;
+      winners = revealed.map((w) => ({ round: w.round, name: w.name, avatar: w.avatar }));
+      const mine = token ? revealed.find((w) => w.key === String(token)) : null;
+      if (mine) me = { round: mine.round };
+    }
+    return { now, event: ev ? { id: ev.id, title: ev.title, endAt: ev.endAt } : null, open, pending, winners, me };
   },
 
   startEvent: async (st, pin, title, minutes) => {
@@ -134,12 +145,12 @@ const actions = {
       const ex = await st.get(phoneKey, { type: "json" });
       const list = await readList(st, ev);
       const me = list.find((r) => r.key === ex?.ordKey);
-      return { already: true, no: me?.no ?? "-", name: ex?.name ?? name, avatar: ex?.avatar ?? 0, eventId: ev.id };
+      return { already: true, no: me?.no ?? "-", name: ex?.name ?? name, avatar: ex?.avatar ?? 0, eventId: ev.id, token: ex?.ordKey };
     }
     await st.set(ordKey, "1");
     const list = await readList(st, ev);
     const me = list.find((r) => r.key === ordKey);
-    return { already: false, no: me ? me.no : list.length, name, avatar, eventId: ev.id };
+    return { already: false, no: me ? me.no : list.length, name, avatar, eventId: ev.id, token: ordKey };
   },
 
   drawWinner: async (st, pin) => {
@@ -153,7 +164,8 @@ const actions = {
     if (!pool.length) fail("ไม่มีรายชื่อเหลือให้สุ่มแล้ว");
     const pick = pool[Math.floor(Math.random() * pool.length)];
     const round = winners.length + 1;
-    winners.push({ round, key: pick.key, no: pick.no, name: pick.name, phone: pick.phone, avatar: pick.avatar });
+    // revealAt: มือถือผู้โชคดีจะรู้ผลหลังจอใหญ่เฉลย (แอนิเมชันหมุนประมาณ 6 วินาที)
+    winners.push({ round, key: pick.key, no: pick.no, name: pick.name, phone: pick.phone, avatar: pick.avatar, revealAt: Date.now() + 6500 });
     await st.setJSON(`win/${ev.id}`, winners);
     return { ...pub(pick), round };
   },
